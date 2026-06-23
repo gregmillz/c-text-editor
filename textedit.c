@@ -6,11 +6,17 @@
 #include <termios.h>
 #include <unistd.h>
 
+// defines
+#define CTRL_KEY(k) ((k) & 0x1f)
+
 // data
 struct termios orig_termios;
 
 // terminal
 void die(const char *s) {
+  write(STDOUT_FILENO, "\x1b[2J", 4);
+  write(STDOUT_FILENO, "\x1b[H", 3);
+
   perror(s);
   exit(1);
 }
@@ -41,26 +47,61 @@ void enableRawMode() {
   }
 }
 
+// wait for one keypress and return it
+char editorReadKey() {
+  int nread;
+  char c;
+  while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
+    if (nread == -1 && errno != EAGAIN) {
+      die("read");
+    }
+  }
+  return c;
+}
+
+// output
+
+// follows VT100 instructions https://vt100.net/docs/vt100-ug/chapter3.html#CUP
+void editorRefreshScreen() {
+  // writes an escape sequence (4 bytes).
+  // Escape sequences start with an escape character,
+  // followed by a [ character.
+  //
+  // \x is punctuation for "a hex byte follows"
+  // byte 1: escape characters: 1b
+  // bytes 2-4: [2J
+  //
+  // J is a command to clear the screen. Escape sequence
+  // commands take arguments which come before the command, 2 in
+  // this case, to clear the screen.
+  write(STDOUT_FILENO, "\x1b[2J", 4);
+
+  // place cursor at the top right with the H command
+  write(STDOUT_FILENO, "\x1b[H", 3);
+}
+
+// input
+
+// wait for a keypress then handle it
+void editorProcessKeypress() {
+  char c = editorReadKey();
+
+  switch (c) {
+  case CTRL_KEY('q'):
+    write(STDOUT_FILENO, "\x1b[2J", 4);
+    write(STDOUT_FILENO, "\x1b[H", 3);
+    exit(0);
+    break;
+  }
+}
+
 // init
 int main() {
   enableRawMode();
 
-  char c;
   while (1) {
-    char c = '\0';
-    if (read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN) {
-      die("read");
-    }
-    if (iscntrl(c)) {
-      // tests whether c is a control character
-      // control characters in ASCII are 0-31 and 127.
-      // 32-126 are printable.
-      printf("%d\r\n", c);
-    } else {
-      printf("%d ('%c')\r\n", c, c);
-    }
-    if (c == 'q')
-      break;
+    editorRefreshScreen();
+    editorProcessKeypress();
   }
 
   return 0;
