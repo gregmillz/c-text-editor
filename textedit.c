@@ -3,6 +3,8 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/ioctl.h>
+#include <sys/ttycom.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -10,7 +12,13 @@
 #define CTRL_KEY(k) ((k) & 0x1f)
 
 // data
-struct termios orig_termios;
+struct editorConfig {
+  int screenrows;
+  int screencols;
+  struct termios orig_termios;
+};
+
+struct editorConfig E;
 
 // terminal
 void die(const char *s) {
@@ -22,18 +30,18 @@ void die(const char *s) {
 }
 
 void disableRawMode() {
-  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios) == -1) {
+  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_termios) == -1) {
     die("tcsetattr");
   }
 }
 
 void enableRawMode() {
-  if (tcgetattr(STDIN_FILENO, &orig_termios) == -1) {
+  if (tcgetattr(STDIN_FILENO, &E.orig_termios) == -1) {
     die("tcgetattr");
   }
   atexit(disableRawMode);
 
-  struct termios raw = orig_termios;
+  struct termios raw = E.orig_termios;
 
   raw.c_iflag &= ~(BRKINT | ICRNL | ICRNL | INPCK | ISTRIP | IXON);
   raw.c_oflag &= ~(OPOST);
@@ -59,11 +67,60 @@ char editorReadKey() {
   return c;
 }
 
+int getCursorPosition(int *rows, int *cols) {
+
+  // this is the Device Status Report escape sequence.
+  // Once we write it to stdout, we can read the byte sequence
+  // afterwards
+  if (write(STDOUT_FILENO, "\x1b[6n", 4) != 4) {
+    return -1;
+  }
+
+  printf("\r\n");
+  char c;
+  // read what was printed by Device Status Report.
+  // it's an escape sequence. The escape character 27 followed
+  // by [ then 18;97R
+  // This escape sequence is the Cursor Position Report
+  while (read(STDIN_FILENO, &c, 1) == 1) {
+    if (iscntrl(c)) {
+      printf("%d\r\n", c);
+    } else {
+      printf("%d ('%c')\r\n", c, c);
+    }
+  }
+
+  return -1;
+}
+
+int getWindowSize(int *rows, int *cols) {
+  struct winsize ws;
+
+  // for some reason these can be zero
+  if (1 || ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
+    // that can sometimes fail, and if so, we can just handle this manually by
+    // going to the bottom-right of the screen, then use escape sequences to
+    // fine the position of the cursor to find how many rows and columns
+    // there must be on the screen
+    //
+    // use the C command (Cursor Forward) to move to the right, then the B
+    // command (Cursor Down) to move down
+    if (write(STDOUT_FILENO, "\x1b[999C\x1b[999B", 12) != 12) {
+      return -1;
+    }
+    return getCursorPosition(rows, cols);
+  } else {
+    *cols = ws.ws_col;
+    *rows = ws.ws_row;
+    return 0;
+  }
+}
+
 // output
 
 void editorDrawRows() {
   int y;
-  for (y = 0; y < 24; y++) {
+  for (y = 0; y < E.screenrows; y++) {
     write(STDOUT_FILENO, "~\r\n", 3);
   }
 }
@@ -88,7 +145,7 @@ void editorRefreshScreen() {
 
   editorDrawRows();
 
-  // reposition the cursor back to the top-left
+  // another <esc>[H to reposition the cursor back to the top-left
   write(STDOUT_FILENO, "\x1b[H", 3);
 }
 
@@ -108,8 +165,15 @@ void editorProcessKeypress() {
 }
 
 // init
+void initEditor() {
+  if (getWindowSize(&E.screenrows, &E.screencols) == -1) {
+    die("getWindowSize");
+  }
+}
+
 int main() {
   enableRawMode();
+  initEditor();
 
   while (1) {
     editorRefreshScreen();
