@@ -61,6 +61,13 @@ char editorReadKey() {
 
 // output
 
+void editorDrawRows() {
+  int y;
+  for (y = 0; y < 24; y++) {
+    write(STDOUT_FILENO, "~\r\n", 3);
+  }
+}
+
 // follows VT100 instructions https://vt100.net/docs/vt100-ug/chapter3.html#CUP
 void editorRefreshScreen() {
   // writes an escape sequence (4 bytes).
@@ -77,6 +84,11 @@ void editorRefreshScreen() {
   write(STDOUT_FILENO, "\x1b[2J", 4);
 
   // place cursor at the top right with the H command
+  write(STDOUT_FILENO, "\x1b[H", 3);
+
+  editorDrawRows();
+
+  // reposition the cursor back to the top-left
   write(STDOUT_FILENO, "\x1b[H", 3);
 }
 
