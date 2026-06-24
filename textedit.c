@@ -68,29 +68,49 @@ char editorReadKey() {
 }
 
 int getCursorPosition(int *rows, int *cols) {
+  char buf[32];
+  unsigned int i = 0;
 
   // this is the Device Status Report escape sequence.
-  // Once we write it to stdout, we can read the byte sequence
+  //
+  // write it to stdout, we can read the byte sequence
   // afterwards
   if (write(STDOUT_FILENO, "\x1b[6n", 4) != 4) {
     return -1;
   }
 
-  printf("\r\n");
-  char c;
-  // read what was printed by Device Status Report.
-  // it's an escape sequence. The escape character 27 followed
-  // by [ then 18;97R
-  // This escape sequence is the Cursor Position Report
-  while (read(STDIN_FILENO, &c, 1) == 1) {
-    if (iscntrl(c)) {
-      printf("%d\r\n", c);
-    } else {
-      printf("%d ('%c')\r\n", c, c);
+  // the Device Status report will write the escape character 27
+  // followed by [ then 18;97R. So we want to read into buf until R
+  // is found.
+  while (i < sizeof(buf) - 1) {
+    // reads 1 byte into buf[i]
+    if (read(STDIN_FILENO, &buf[i], 1) != 1) {
+      break;
     }
+    if (buf[i] == 'R') {
+      break;
+    }
+    i++;
   }
 
-  return -1;
+  // printf expects strings to end with a 0 byte so assign \0
+  // to the final byte of buf
+  buf[i] = '\0';
+
+  // ensure there's an escape sequence
+  if (buf[0] != '\x1b' || buf[1] != '[') {
+    return -1;
+  }
+
+  // pass the pointers to third character of buf so
+  // we're passing a string like 24;80 to sscanf.
+  // The string %d;%d tells it to parse two integers
+  // separated by a ; and put the values into rows and cols
+  if (sscanf(&buf[2], "%d;%d", rows, cols) != 2) {
+    return -1;
+  }
+
+  return 0;
 }
 
 int getWindowSize(int *rows, int *cols) {
