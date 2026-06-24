@@ -117,7 +117,7 @@ int getWindowSize(int *rows, int *cols) {
   struct winsize ws;
 
   // for some reason these can be zero
-  if (1 || ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
+  if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
     // that can sometimes fail, and if so, we can just handle this manually by
     // going to the bottom-right of the screen, then use escape sequences to
     // fine the position of the cursor to find how many rows and columns
@@ -141,7 +141,11 @@ int getWindowSize(int *rows, int *cols) {
 void editorDrawRows() {
   int y;
   for (y = 0; y < E.screenrows; y++) {
-    write(STDOUT_FILENO, "~\r\n", 3);
+    write(STDOUT_FILENO, "~", 1);
+
+    if (y < E.screenrows - 1) {
+      write(STDOUT_FILENO, "\r\n", 2);
+    }
   }
 }
 
