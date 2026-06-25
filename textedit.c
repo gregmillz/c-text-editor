@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/ioctl.h>
 #include <sys/ttycom.h>
 #include <termios.h>
@@ -136,21 +137,64 @@ int getWindowSize(int *rows, int *cols) {
   }
 }
 
+// append buffer consisting of a pointer to the buffer,
+// and length so we can read from the pointer onwards
+struct abuf {
+  char *b;
+  int len;
+};
+
+// constructor for abuf type.
+#define ABUF_INIT {NULL, 0}
+
+// append string s to an abuf
+void abAppend(struct abuf *ab, const char *s, int len) {
+  // allocate enough memory to hold the new string. AKA
+  // use realloc to resize the previously allocated heap block.
+  //
+  // realloc will return a block of memory of size of the current
+  // string plus the size of the string to append.
+  //
+  // relloac will either extend the size of the block of memory
+  // that is already allocated, or it will free() the current block
+  // of memory and allocate a new block somewhere else that is big
+  // enough for the string.
+  char *new = realloc(ab->b, ab->len + len);
+
+  if (new == NULL) {
+    return;
+  }
+
+  // memcpy is from string.h
+  // memcpy copies s after the end of the current data
+  // in ab->b
+  memcpy(&new[ab->len], s, len);
+  ab->b = new;
+  ab->len += len;
+}
+
+void abFree(struct abuf *ab) {
+  // free is from stdlib
+  free(ab->b);
+}
+
 // output
 
-void editorDrawRows() {
+void editorDrawRows(struct abuf *ab) {
   int y;
   for (y = 0; y < E.screenrows; y++) {
-    write(STDOUT_FILENO, "~", 1);
+    abAppend(ab, "~", 1);
 
     if (y < E.screenrows - 1) {
-      write(STDOUT_FILENO, "\r\n", 2);
+      abAppend(ab, "\r\n", 2);
     }
   }
 }
 
 // follows VT100 instructions https://vt100.net/docs/vt100-ug/chapter3.html#CUP
 void editorRefreshScreen() {
+  struct abuf ab = ABUF_INIT;
+
   // writes an escape sequence (4 bytes).
   // Escape sequences start with an escape character,
   // followed by a [ character.
@@ -162,15 +206,18 @@ void editorRefreshScreen() {
   // J is a command to clear the screen. Escape sequence
   // commands take arguments which come before the command, 2 in
   // this case, to clear the screen.
-  write(STDOUT_FILENO, "\x1b[2J", 4);
+  abAppend(&ab, "\x1b[2J", 4);
 
-  // place cursor at the top right with the H command
-  write(STDOUT_FILENO, "\x1b[H", 3);
+  // place cursor at the top left with the H command
+  abAppend(&ab, "\x1b[H", 3);
 
-  editorDrawRows();
+  editorDrawRows(&ab);
 
   // another <esc>[H to reposition the cursor back to the top-left
-  write(STDOUT_FILENO, "\x1b[H", 3);
+  abAppend(&ab, "\x1b[H", 3);
+
+  write(STDOUT_FILENO, ab.b, ab.len);
+  abFree(&ab);
 }
 
 // input
