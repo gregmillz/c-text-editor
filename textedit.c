@@ -195,6 +195,9 @@ void editorDrawRows(struct abuf *ab) {
 void editorRefreshScreen() {
   struct abuf ab = ABUF_INIT;
 
+  // hide the cursor while drawing
+  abAppend(&ab, "\x1b[?25l", 6);
+
   // writes an escape sequence (4 bytes).
   // Escape sequences start with an escape character,
   // followed by a [ character.
@@ -215,6 +218,9 @@ void editorRefreshScreen() {
 
   // another <esc>[H to reposition the cursor back to the top-left
   abAppend(&ab, "\x1b[H", 3);
+
+  // show the cursor
+  abAppend(&ab, "\x1b[?25h", 6);
 
   write(STDOUT_FILENO, ab.b, ab.len);
   abFree(&ab);
