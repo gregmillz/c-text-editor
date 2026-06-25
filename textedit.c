@@ -185,6 +185,11 @@ void editorDrawRows(struct abuf *ab) {
   for (y = 0; y < E.screenrows; y++) {
     abAppend(ab, "~", 1);
 
+    // wipe each line after the tilde by
+    // using K which erases part of the line
+    // to the right of the cursor
+    abAppend(ab, "\x1b[K", 3);
+
     if (y < E.screenrows - 1) {
       abAppend(ab, "\r\n", 2);
     }
@@ -195,21 +200,13 @@ void editorDrawRows(struct abuf *ab) {
 void editorRefreshScreen() {
   struct abuf ab = ABUF_INIT;
 
-  // hide the cursor while drawing
-  abAppend(&ab, "\x1b[?25l", 6);
-
-  // writes an escape sequence (4 bytes).
-  // Escape sequences start with an escape character,
-  // followed by a [ character.
-  //
+  // example of esc sequence:
   // \x is punctuation for "a hex byte follows"
   // byte 1: escape characters: 1b
   // bytes 2-4: [2J
   //
-  // J is a command to clear the screen. Escape sequence
-  // commands take arguments which come before the command, 2 in
-  // this case, to clear the screen.
-  abAppend(&ab, "\x1b[2J", 4);
+  // hide the cursor while drawing
+  abAppend(&ab, "\x1b[?25l", 6);
 
   // place cursor at the top left with the H command
   abAppend(&ab, "\x1b[H", 3);
